@@ -3,6 +3,7 @@ import { createTestingConnections, closeTestingConnections, reloadTestingDatabas
 import { Master } from "./entity/Master";
 import { Slave } from "./entity/Slave";
 import { expect } from "chai";
+import { MasterMitigated } from "./entity/MasterMitigated";
 
 
 describe("other-issues > non-cascade-update", () => {
@@ -46,7 +47,7 @@ describe("other-issues > non-cascade-update", () => {
 
             payload.id = masterId;
 
-            let response = await connection
+            const response = await connection
                 .getRepository(Master)
                 .save(payload);
 
@@ -57,6 +58,56 @@ describe("other-issues > non-cascade-update", () => {
                     content: "slave content",
                 }
             });
+        }
+
+    })));
+
+    it("should mitigate and do unwanted update", 
+    () => Promise.all(connections.map(async connection => {
+
+        let masterId: number;
+        let slaveId: number;
+
+        {
+            // Setup DB
+            const master = new MasterMitigated();
+            master.masterContent = "MASTER CONTENT";
+            master.slave = new Slave();
+            master.slave.content = "SLAVE CONTENT";
+    
+            await connection.manager.save(master.slave);
+            await connection.manager.save(master);
+
+            masterId = master.id;
+            slaveId = master.slave.id;
+        }
+
+
+        {
+            // Receive HTTP PUT
+            const payload = {
+                id: 0,
+                masterContent: "MASTER CONTENT",
+                slave: {
+                    content: "slave content",
+                }
+            };
+
+            payload.id = masterId;
+
+            const response = await connection
+            .getRepository(MasterMitigated)
+            .save(payload);
+
+            expect(response).to.be.deep.equal({
+                id: masterId,
+                masterContent: "MASTER CONTENT",
+                slave: {
+                    id: slaveId,
+                    content: "slave content",
+                }
+            });
+
         }
 
     })));
